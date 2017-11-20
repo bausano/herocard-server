@@ -4,6 +4,8 @@
 
 -module(hc_game).
 
+-export([fetch/1, create/1]).
+
 %% Record of game stores a game info.
 -record(game, {
   %% String id of game under which it's registered.
@@ -17,3 +19,9 @@
   %% JSON object storing game state.
   state
 }).
+
+create(Data) ->
+  ok.
+
+fetch(Id) ->
+  ok.

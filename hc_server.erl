@@ -4,19 +4,24 @@
 
 -module(hc_server).
 
--export([boot/1, state/0]).
+-export([boot/1]).
+
+-import(hc_router, [request/3]).
 
 %% Socket is type of port.
 -type socket() :: port().
 
 %% Boots TPC server on given port.
--spec boot(integer()) -> atom().
+-spec boot(integer()) -> tuple().
 
-%% Returns jSON object with state of current game.
--spec state() -> atom().
+%% Spawns new listen process.
+-spec acceptor(tuple()) -> any().
 
-%% Handles a request such as draw card, put card or attack card.
--spec request(socket(), binary()) -> tuple().
+%% Listens to messages from socket.
+-spec loop(socket(), binary()) -> any().
+
+%% Handles a message sent by client.
+-spec handle(socket(), binary()) -> tuple().
 
 %% Name of the server.
 -define(NAME, "HeroCard").
@@ -34,10 +39,7 @@
 ]).
 
 %% Defines a character every request sent to the server has to end with.
--define(DELIMINATOR, "$").
-
-%% Debug function.
--define(PRINT(Var), io:format("DEBUG: ~p:~p - ~p~n~n ~p~n~n", [?MODULE, ?LINE, ??Var, Var])).
+-define(DELIMITOR, "$").
 
 %% Booting the server. It's not parallel yet.
 boot(Port) ->
@@ -52,30 +54,42 @@ boot(Port) ->
 
 %% This process gets called everytime someone attemps to connect.
 acceptor({ok, ListenSocket}) ->
-	io:format("Opening connection \n", []),
 	%% Handles connection and creates socket unique for that connection.
 	{ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
 	%% Spawns worker for next connection.
 	spawn(fun() -> acceptor({ok, ListenSocket}) end),
-	%% TODO: Register socket.
 	%% Monitores socket messages.
 	loop(AcceptSocket, []);
 
-acceptor({error, Reason}) -> ?PRINT(Reason).
+acceptor({error, _Reason}) ->
+	%% TODO: Log error message
+	error.
 
-%% Socket-communication loop. Messages sent are getting appended to data list.
+%% Socket-communication loop.
 loop(Socket, Data) ->
+	%% Keeps socket in passive mode.
 	inet:setopts(Socket, [{active, once}]),
 	receive
 		{tcp, Socket, Message} ->
+			%% Apends packet to the list of packets.
 			CurrentData = binary:list_to_bin([Data | [Message]]),
 			case handle(Socket, CurrentData) of
+				%% If request was valid, sends a response to client.
 				{ok, Response} ->
-					gen_tcp:send(Socket, Response ++ "\n"),
+					ok = gen_tcp:send(Socket, Response ++ "\n"),
 					loop(Socket, []);
-				{error, _Reason} ->
-					gen_tcp:send(Socket, "error\n"),
+
+				{error, Reason} ->
+					%% TODO: Log all error messages.
+					ok = gen_tcp:send(Socket, Reason ++ "\n"),
 					loop(Socket, []);
+
+				%% Breaking the loop.
+				{stop, _} ->
+					ok = gen_tcp:send(Socket, "closed\n"),
+					ok = gen_tcp:close(Socket);
+
+				%% Fallback for other cases.
 				_Default ->
 					loop(Socket, CurrentData)
 			end
@@ -84,37 +98,13 @@ loop(Socket, Data) ->
 %% Determines whener the message is a command or not.
 %% Returns a tuple of 2.
 handle(Socket, Message) ->
-	Position = binary:match(Message, <<?DELIMINATOR>>),
+	Position = binary:match(Message, <<?DELIMITOR>>),
 	case Position of
 		{EndPos, _} ->
 			Command = binary:part(Message, 0, EndPos),
-			request(Socket, Command);
+			%% Parses binary function string into separate commands.
+			[Route | Args] = binary:split(Command, <<";">>, [global]),
+			%% Call router request.
+			hc_router:request(Socket, Route, Args);
 		_Default -> {wait, nomatch}
 	end.
-
-request(Socket, <<"print", _/binary>>) ->
-	{ok, "Here is some delicious message"};
-
-request(Socket, <<"quit">>) ->
-	ok = get_tcp:close(Socket),
-	{ok, "closed"};
-
-request(Socket, <<"newgame">>) ->
-	{ok, "Starting new game and waiting for user to connect."};
-
-request(Socket, <<"gamelist">>) ->
-	{ok, "Returning gamelist."};
-
-request(Socket, <<"connect;", Tail/binary>>) ->
-	Args = get_arguments_list(Tail),
-	?PRINT(Args),
-	{ok, "Connecting to the game."};
-
-request(_Socket, _Default) ->
-	{error, nomatch}.
-
-%% Parses binary function string into separate commands.
-get_arguments_list(Binary) ->
-	binary:split(Binary, <<";">>, [global]).
-
-state() -> ok.

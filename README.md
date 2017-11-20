@@ -1,2 +1,2 @@
 # herocard-server
-En Erlang server for HeroCard game.
+En Erlang server for my HeroCard game.
