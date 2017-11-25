@@ -1,21 +1,14 @@
 #!/bin/bash
 
-for filename in **/*.erl; do
-  cp $filename bin/$(basename $filename)
+# Directory of Erlang files to build.
+dir=${1-src}
+
+# Creates a bin directory if doesn't exist.
+mkdir -p bin
+
+echo -e "\nCompiling $dir ...\n"
+
+# Compile all Erlang files into the bin directory.
+for filename in $(find $dir -name "*.erl"); do
+  erlc -o bin $filename
 done
-
-cd bin
-
-echo -e "\nCompiling\n"
-
-erl -make
-
-for filename in *.erl; do
-  rm $filename
-done
-
-echo -e "\nRunning\n"
-
-erl -s main start -s init stop
-
-echo -e "\n\nTerminating\n"
