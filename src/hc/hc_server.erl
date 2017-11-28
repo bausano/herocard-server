@@ -4,9 +4,13 @@
 
 -module(hc_server).
 
--export([boot/1]).
+-include("../models/model_player.hrl").
+
+-export([boot/1, respond/2]).
 
 -import(hc_router, [request/3]).
+
+-import(hc_arcade, [boot/0]).
 
 %% Socket is type of port.
 -type socket() :: port().
@@ -22,6 +26,9 @@
 
 %% Handles a message sent by client.
 -spec handle(socket(), binary()) -> tuple().
+
+%% Sends a message to client socket.
+-spec respond(socket(), any()) -> atom().
 
 %% Name of the server.
 -define(NAME, "HeroCard").
@@ -41,8 +48,12 @@
 %% Defines a character every request sent to the server has to end with.
 -define(DELIMITOR, "$").
 
-%% Booting the server. It's not parallel yet.
+%% Debug function.
+-define(PRINT(Var), io:format("DEBUG: ~p:~p - ~p~n~n ~p~n~n", [?MODULE, ?LINE, ??Var, Var])).
+
+%% Booting the server.
 boot(Port) ->
+  hc_arcade:boot(),
 	Pid = spawn_link(fun() ->
 		%% Socket that's listening on given port.
 		ListenSocket = gen_tcp:listen(Port, ?OPTIONS),
@@ -58,48 +69,49 @@ acceptor({ok, ListenSocket}) ->
 	{ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
 	%% Spawns worker for next connection.
 	spawn(fun() -> acceptor({ok, ListenSocket}) end),
+  %% Registers socket as a player.
+  Player = hc_player:new(AcceptSocket),
 	%% Monitores socket messages.
-	loop(AcceptSocket, []);
+	loop(Player, []);
 
 acceptor({error, _Reason}) ->
 	%% TODO: Log error message
 	error.
 
 %% Socket-communication loop.
-loop(Socket, Data) ->
+loop(Player, Data) ->
+  Socket = Player#player.socket,
 	%% Keeps socket in passive mode.
 	inet:setopts(Socket, [{active, once}]),
 	receive
 		{tcp, Socket, Message} ->
 			%% Apends packet to the list of packets.
 			CurrentData = binary:list_to_bin([Data | [Message]]),
-      %% Standard ending of every response.
-      EndResponse = "\n" ++ ?DELIMITOR ++ "\n",
-			case handle(Socket, CurrentData) of
+			case handle(Player, CurrentData) of
 				%% If request was valid, sends a response to client.
 				{ok, Response} ->
-					ok = gen_tcp:send(Socket, Response ++ EndResponse),
-					loop(Socket, []);
+          respond(Socket, Response),
+					loop(Player, []);
 
 				{error, Reason} ->
 					%% TODO: Log all error messages.
-					ok = gen_tcp:send(Socket, Reason ++ EndResponse),
-					loop(Socket, []);
+          respond(Socket, Reason),
+					loop(Player, []);
 
 				%% Breaking the loop.
 				{stop, _} ->
-					ok = gen_tcp:send(Socket, "closed" ++ EndResponse),
+          respond(Socket, "closed"),
 					ok = gen_tcp:close(Socket);
 
 				%% Fallback for other cases.
 				_Default ->
-					loop(Socket, CurrentData)
+					loop(Player, CurrentData)
 			end
 	end.
 
 %% Determines whener the message is a command or not.
 %% Returns a tuple of 2.
-handle(Socket, Message) ->
+handle(Player, Message) ->
 	Position = binary:match(Message, <<?DELIMITOR>>),
 	case Position of
 		{EndPos, _} ->
@@ -107,6 +119,11 @@ handle(Socket, Message) ->
 			%% Parses binary function string into separate commands.
 			[Route | Args] = binary:split(Command, <<";">>, [global]),
 			%% Call router request.
-			hc_router:request(Socket, Route, Args);
+			hc_router:request(Player, Route, Args);
 		_Default -> {wait, nomatch}
 	end.
+
+%% Responds to client in standardized format.
+respond(Socket, Response) ->
+  Over = "\n" ++ ?DELIMITOR ++ "\n",
+  ok = gen_tcp:send(Socket, Response ++ Over).

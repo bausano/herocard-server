@@ -7,7 +7,7 @@
 
 -export([request/3]).
 
--import(hc_game, [create/1, fetch/1]).
+-import(hc_game, [create/1]).
 
 %% Socket is type of port.
 -type socket() :: port().
@@ -25,21 +25,27 @@
 %% Debug function.
 -define(PRINT(Var), io:format("DEBUG: ~p:~p - ~p~n~n ~p~n~n", [?MODULE, ?LINE, ??Var, Var])).
 
-request(Socket, <<"print">>, _) ->
-	{ok, "Here is some delicious message"};
-
-request(_Socket, <<"quit">>, _) ->
+request(_Player, <<"quit">>, _) ->
 	{stop, byclient};
 
-request(Socket, <<"newgame">>, _) ->
-	{ok, "Starting new game and waiting for user to connect."};
+request(Player, <<"newgame">>, _) ->
+  hc_game:create(Player);
 
-request(Socket, <<"gamelist">>, _) ->
-	{ok, "Returning gamelist."};
+request(_Player, <<"gamelist">>, _) ->
+  whereis(lobbies) ! {list, self()},
+  receive
+    Dict -> {ok, dict:fold(fun(Id, _Lobby, AccIn) ->
+      AccIn ++ ";" ++ integer_to_list(Id)
+    end, "gameids", Dict)}
+  end;
 
-request(Socket, <<"connect">>, Args) ->
+request(_Player, <<"connect">>, Args) ->
   ?PRINT(Args),
 	{ok, "Connecting to the game as "};
 
-request(_Socket, _Default, _Args) ->
+request(Player, <<"auth">>, _Args) ->
+  ?PRINT(Player),
+	{ok, "Michael"};
+
+request(_Player, _Default, _Args) ->
 	{error, "Invalid command."}.
