@@ -19,12 +19,36 @@ create(Player) ->
     move = 1,
     state = 1
   },
-  whereis(lobbies) ! {add, self(), Game},
+  Pid = spawn(fun() -> loop(Game) end),
+  whereis(lobbies) ! {add, self(), Pid},
   receive
     {ok, Id} ->
-      {ok, "lobyid;" ++ integer_to_list(Id)};
+      {ok, "lobbyid;" ++ integer_to_list(Id)};
     error ->
       {error, "lobbyexists"}
+  end.
+
+loop(Game) ->
+  receive
+    {id, From} ->
+      From ! Game#game.id,
+      loop(Game);
+
+    {players, From} ->
+      From ! Game#game.players,
+      loop(Game);
+
+    {connect_player, From, Player} ->
+      {_, Player2} = Game#game.players,
+      case Player2 of
+        null ->
+           %% TODO copy game w/ player.
+          From ! {ok, "xdd"},
+          loop(Game);
+        _Default ->
+          From ! {error, "playerexists"},
+          loop(Game)
+      end
   end.
 
 connect(_Id) ->

@@ -24,12 +24,12 @@ arcade(Games) ->
 lobbies(Lobbies) ->
   receive
     {add, From, Lobby} ->
-      Id = Lobby#game.id,
+      Lobby ! {id, self()},
+      receive Val -> Id = Val end,
       case dict:is_key(Id, Lobbies) of
         true ->
           From ! error,
           lobbies(Lobbies);
-
         false ->
           From ! {ok, Id},
           lobbies(dict:append(Id, Lobby, Lobbies))
