@@ -25,7 +25,8 @@ create(Player) ->
     {ok, Id} ->
       {ok, "lobbyid;" ++ integer_to_list(Id)};
     error ->
-      {error, "lobbyexists"}
+      %% TODO: Move all error messages to a shared file.
+      {error, "error;You have already started a game!"}
   end.
 
 loop(Game) ->

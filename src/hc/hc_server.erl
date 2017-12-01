@@ -86,7 +86,7 @@ loop(Player, Data) ->
 	receive
 		{tcp, Socket, Message} ->
 			%% Apends packet to the list of packets.
-			CurrentData = binary:list_to_bin(Data, Message]),
+			CurrentData = binary:list_to_bin([Data, Message]),
 			case handle(Player, CurrentData) of
 				%% If request was valid, sends a response to client.
 				{ok, Response} ->

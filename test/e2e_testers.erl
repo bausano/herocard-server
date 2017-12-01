@@ -12,7 +12,8 @@ gen(Testers) ->
   Pid = spawn(fun() ->
     scenarios(spawn_all_testers(Testers))
   end),
-  register(testers, Pid).
+  register(testers, Pid),
+  ok.
 
 scenarios(Testers) ->
   receive
@@ -69,7 +70,7 @@ monitor_loop(Socket, Message) ->
 
 listen_loop(Name, Socket, Monitor) ->
   case gen_tcp:recv(Socket, 0) of
-    {error, Reason} ->
+    {error, _Reason} ->
       Monitor ! {message, <<"closed">>};
     {ok, Packet} ->
       Trim = binary:part(Packet, 0, byte_size(Packet) - 3),
