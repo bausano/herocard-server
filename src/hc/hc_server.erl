@@ -86,10 +86,11 @@ loop(Player, Data) ->
 	receive
 		{tcp, Socket, Message} ->
 			%% Apends packet to the list of packets.
-			CurrentData = binary:list_to_bin([Data | [Message]]),
+			CurrentData = binary:list_to_bin(Data, Message]),
 			case handle(Player, CurrentData) of
 				%% If request was valid, sends a response to client.
 				{ok, Response} ->
+          ?PRINT(Response),
           respond(Socket, Response),
 					loop(Player, []);
 
@@ -100,6 +101,7 @@ loop(Player, Data) ->
 
 				%% Breaking the loop.
 				{stop, _} ->
+          ?PRINT(closed),
           respond(Socket, "closed"),
 					ok = gen_tcp:close(Socket);
 
@@ -115,6 +117,7 @@ handle(Player, Message) ->
 	Position = binary:match(Message, <<?DELIMITOR>>),
 	case Position of
 		{EndPos, _} ->
+      ?PRINT(Message),
 			Command = binary:part(Message, 0, EndPos),
 			%% Parses binary function string into separate commands.
 			[Route | Args] = binary:split(Command, <<";">>, [global]),

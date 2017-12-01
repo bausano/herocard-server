@@ -1,15 +1,12 @@
 -module(e2e_testers).
 
--export([gen/1, action/2, expect/2]).
+-export([gen/1, action/2, expect/1]).
 
 -define(PORT, 5551).
 
 -define(ADDR, {127,0,0,1}).
 
 -define(OPTIONS, [binary, {active, false}]).
-
-%% Debug function.
--define(PRINT(Var), io:format("DEBUG: ~p:~p - ~p~n~n ~p~n~n", [?MODULE, ?LINE, ??Var, Var])).
 
 gen(Testers) ->
   Pid = spawn(fun() ->
@@ -19,58 +16,63 @@ gen(Testers) ->
 
 scenarios(Testers) ->
   receive
-    {From, Tester, newgame} ->
-      Pid = locate_tester(Testers, Tester),
-      Pid ! {self(), send, "newgame"},
+    {From, Tester, expect} ->
+      [Pid | []] = dict:fetch(Tester, Testers),
+      Pid ! {self(), response},
       receive Response -> From ! Response end;
-    {From, Tester, gamelist} ->
-      Pid = locate_tester(Testers, Tester),
-      Pid ! {self(), send, "gamelist"},
-      receive Response -> From ! Response end;
-    {From, Tester, {connect, GameId}} ->
-      Pid = locate_tester(Testers, Tester),
-      Pid ! {self(), send, "connect;" ++ GameId},
-      receive Response -> From ! Response end;
-    {_From, _Tester, {expect, Pattern}} ->
-      ?PRINT(Pattern)
-  end.
+    {From, Tester, Message} ->
+      [Pid | []] = dict:fetch(Tester, Testers),
+      Pid ! {self(), send, Message},
+      timer:sleep(1000),
+      Pid ! {self(), response},
+      receive Response -> From ! Response end
+  end,
+  scenarios(Testers).
 
 action(Tester, Action) ->
   whereis(testers) ! {self(), Tester, Action},
-  receive
-    Response -> Response
-  end.
+  receive Response -> Response end.
 
-expect(Tester, Pattern) ->
-  action(Tester, {expect, Pattern}).
+expect(Tester) ->
+  action(Tester, expect).
 
-locate_tester([], _Tester) -> error;
+spawn_all_testers(Testers) ->
+  spawn_all_testers(Testers, dict:new()).
 
-locate_tester([{Tester, Pid} | _Tail], Tester) -> Pid;
+spawn_all_testers([], Dict) -> Dict;
 
-locate_tester([_Head | Tail], Tester) ->
-  locate_tester(Tail, Tester).
+spawn_all_testers([Tester | Tail], Dict) ->
+  Appended = dict:append(Tester, spawn_tester(Tester), Dict),
+  spawn_all_testers(Tail, Appended).
 
-spawn_all_testers([]) -> [];
-
-spawn_all_testers([Tester | Tail]) ->
-  [{Tester, spawn_tester()} | spawn_all_testers(Tail)].
-
-spawn_tester() ->
+spawn_tester(Name) ->
   {ok, Socket} =  gen_tcp:connect(?ADDR, ?PORT, ?OPTIONS),
-  spawn(fun() -> listen_loop(Socket, "") end).
+  Monitor = spawn(fun() -> monitor_loop(Socket, <<"">>) end),
+  Listen = spawn(fun() ->
+    listen_loop(Name, Socket, Monitor)
+  end),
+  ok = gen_tcp:controlling_process(Socket, Listen),
+  Monitor.
 
-listen_loop(Socket, LastMessage) ->
+monitor_loop(Socket, Message) ->
   receive
-    {From, lastmessage} ->
-      From ! LastMessage,
-      listen_loop(Socket, LastMessage);
-    {From, send, Message} ->
-      From ! gen_tcp:send(Socket, Message ++ "$"),
-      listen_loop(Socket, LastMessage)
-  end,
+    {From, response} ->
+      From ! Message,
+      monitor_loop(Socket, <<"">>);
+    {message, New} ->
+      monitor_loop(Socket, New);
+    {_From, send, Bin} ->
+      Cmd = binary:list_to_bin([Bin, <<"$">>]),
+      ok = gen_tcp:send(Socket, Cmd),
+      monitor_loop(Socket, Message)
+    end.
+
+listen_loop(Name, Socket, Monitor) ->
   case gen_tcp:recv(Socket, 0) of
-    {error, Reason} -> ?PRINT(Reason);
+    {error, Reason} ->
+      Monitor ! {message, <<"closed">>};
     {ok, Packet} ->
-      listen_loop(Socket, Packet)
+      Trim = binary:part(Packet, 0, byte_size(Packet) - 3),
+      Monitor ! {message, Trim},
+      listen_loop(Name, Socket, Monitor)
   end.
