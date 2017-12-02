@@ -39,6 +39,7 @@
 %% Server settings.
 -define(OPTIONS, [
 	binary,
+  {ip, {127, 0, 0, 1}},
 	{packet, 0},
 	{backlog, 15},
 	{active, false},
