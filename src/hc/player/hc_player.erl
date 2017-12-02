@@ -10,6 +10,9 @@
 
 -export([new/1]).
 
+%% Creates a new player struct.
 new(Socket) ->
+  %% Id of a player is same as the ID of Socket that
+  %% the player first connected to the server with.
   Id = ?SOCKET_ID(Socket),
   #player{id=Id, socket=Socket}.

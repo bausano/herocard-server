@@ -24,6 +24,7 @@ scenarios(Testers) ->
     {From, Tester, Message} ->
       [Pid | []] = dict:fetch(Tester, Testers),
       Pid ! {self(), send, Message},
+      %% TODO: Wait for message instead of sleeping.
       timer:sleep(1000),
       Pid ! {self(), response},
       receive Response -> From ! Response end
